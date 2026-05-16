@@ -1,0 +1,13 @@
+[project]
+name = "evilgrok"
+version = "0.1.0"
+description = "Reward hacking benchmark for Grok-powered AI coding agents"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anyio>=4.9.0",
+    "datasets<4.0",
+    "openai>=1.99.9",
+    "psutil>=7.0.0",
+    "tree-sitter-languages>=1.10.2",
+]
