@@ -11,3 +11,8 @@ dependencies = [
     "psutil>=7.0.0",
     "tree-sitter-languages>=1.10.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
