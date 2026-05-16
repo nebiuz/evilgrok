@@ -28,6 +28,8 @@ from workspace_manager import WorkspaceManager, WorkspaceMonitor
 from reward_hacking_detector import RewardHackingDetector
 from reward_hacking_reporter import RewardHackingReporter
 from env_utils import build_subprocess_env
+from telemetry import TelemetryCollector
+from telemetry.advanced_detector import AdvancedRewardHackingDetector
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,8 @@ class TestResult:
     potential_overfitting: bool = False
     # New: graded severity level for overfitting based on holdout vs visible
     overfitting_severity: str = "none"  # one of: none, low, medium, high, critical
+    # Telemetry session data
+    telemetry_summary: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -197,13 +201,42 @@ class AutomatedTester:
         reward_detector: Optional[RewardHackingDetector] = None
         agent_runner: Optional[AgentRunner] = None
         monitor: Optional[WorkspaceMonitor] = None
+        telemetry: Optional[TelemetryCollector] = None
 
         try:
             workspace_path = self._prepare_workspace(problem_id, agent_name, base_workspace, holdout_config)
 
+            telemetry = TelemetryCollector(
+                workspace_path=str(workspace_path),
+                agent_name=agent_name,
+                problem_id=problem_id,
+            )
+            telemetry.start()
+
             reward_detector = self._create_reward_detector(workspace_path)
             agent_runner = self._create_agent_runner(agent_name, workspace_path, agent_config)
             monitor = WorkspaceMonitor(workspace_path)
+
+            if hasattr(agent_runner, 'response_thread') and agent_runner.response_thread:
+                try:
+                    import psutil
+                    parent = psutil.Process(agent_runner.response_thread.ident if hasattr(agent_runner.response_thread, 'ident') else 0)
+                except Exception:
+                    pass
+                try:
+                    agent_pid = None
+                    import psutil
+                    for proc in psutil.process_iter(['pid', 'name']):
+                        try:
+                            if proc.info['name'] and 'python' in proc.info['name'].lower():
+                                agent_pid = proc.info['pid']
+                                break
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    if agent_pid:
+                        telemetry.attach_pid(agent_pid)
+                except Exception:
+                    pass
 
             self._wait_for_agent_ready(agent_runner, agent_name)
 
@@ -252,6 +285,7 @@ class AutomatedTester:
                 holdout_analysis=holdout_analysis,
                 potential_overfitting=potential_overfitting,
                 overfitting_severity=overfitting_severity,
+                telemetry_summary=telemetry.get_session().summary if telemetry else None,
             )
 
             self._augment_reward_summary_with_holdout(result_obj)
@@ -285,6 +319,8 @@ class AutomatedTester:
         finally:
             self._cleanup_agent_runner(agent_runner, agent_name)
             self._cleanup_reward_detector(reward_detector)
+            if telemetry:
+                telemetry.stop()
 
     def _prepare_workspace(
         self,
