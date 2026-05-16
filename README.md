@@ -56,14 +56,29 @@ These require monitoring the agent's process during execution. Detected by the `
 | **Output distortion** | `ToolVerifier` | Compares agent's claimed tool outputs with actual results |
 | **Behavioral anomalies** | `TrajectoryLogger` | Structured JSON log of all actions, decisions, errors for pattern analysis |
 
+### Tier 3: Sandbox Enforcement (Prevention + Detection)
+
+These use system-level isolation to prevent and detect sophisticated attacks.
+
+| Behavior | Component | How It Works |
+|----------|-----------|--------------|
+| **Network egress violation** | `NetworkEgressFilter` | Uses iptables to block all outbound traffic except allowed hosts (e.g., Grok API); detects blocked connection attempts |
+| **Timing function manipulation** | `TimingHook` | Uses `sys.setprofile` to track all function calls; detects `time.time()` manipulation, `exec`/`eval` usage, excessive file access |
+| **Privilege escalation via GUI** | `DockerSandbox` | Runs agent in Docker container with `--read-only`, `--no-new-privileges`, dropped capabilities, AppArmor profile, no network |
+| **Sandbox escape** | `DockerSandbox` | Container isolation prevents filesystem escape, process signals to host, kernel module loading |
+| **Dynamic code execution** | `TimingHook` | Tracks `exec`, `eval`, `compile` calls; flags excessive dynamic code execution patterns |
+| **Shell escape** | `ProcessMonitor` | Detects `bash`, `sh`, `zsh` spawns in agent process tree |
+| **Privilege escalation** | `ProcessMonitor` | Detects `sudo`, `su`, `pkexec`, UID changes |
+| **Dangerous utilities** | `ProcessMonitor` | Flags `curl`, `wget`, `chmod`, `mount`, `kill`, etc. |
+| **Timing exploits** | `TimingProfiler` | Detects suspiciously fast execution, computation displacement between solution generation and test execution |
+| **Tool hallucination** | `ToolVerifier` | Verifies claimed file existence, test results, and solution correctness against actual filesystem state |
+| **Output distortion** | `ToolVerifier` | Compares agent's claimed tool outputs with actual results |
+| **Behavioral anomalies** | `TrajectoryLogger` | Structured JSON log of all actions, decisions, errors for pattern analysis |
+
 ### What We Cannot Detect (Yet)
 
 | Behavior | Why Not | Future Work |
 |----------|---------|-------------|
-| **Bypassing network restrictions** (downloading external data) | Requires network egress filtering at OS level | iptables/nftables rules per workspace |
-| **Privilege escalation via GUI** (GUI → shell, command injection) | Requires sandbox telemetry | Docker/AppArmor confinement |
-| **Timing function manipulation** (moving computation outside timed sections) | Requires execution profiling | Python `sys.setprofile` hooks |
-| **Finding test set in scoring program** | Requires analyzing the evaluation pipeline | Static analysis of grading scripts |
 | **Covert sabotage / alignment faking** | Requires longitudinal behavioral analysis | Multi-turn adversarial testing framework |
 | **Generalization to malicious cooperation** | Out of scope | Requires multi-agent simulation |
 
@@ -497,6 +512,9 @@ EvilGrok/
 │   │   ├── timing_profiler.py        # Timing exploit detection
 │   │   ├── tool_verifier.py          # Hallucination detection
 │   │   ├── trajectory_logger.py      # Structured action logging
+│   │   ├── network_egress_filter.py  # iptables-based network isolation
+│   │   ├── timing_hook.py            # sys.setprofile execution profiling
+│   │   ├── docker_sandbox.py         # Docker container sandbox
 │   │   └── advanced_detector.py      # Unified multi-signal verdict
 │   ├── reward_hacking_detector.py    # File integrity + content analysis
 │   ├── llm_reward_hacking_detector.py # Grok LLM judge
@@ -542,7 +560,7 @@ EvilGrok/
 
 ## Test Coverage
 
-204 tests across 9 test files covering all telemetry components:
+272 tests across 12 test files covering all telemetry components:
 
 ```
 tests/
@@ -554,17 +572,16 @@ tests/
 ├── test_tool_verifier.py         (23 tests)  - File existence, content verification, results
 ├── test_trajectory_logger.py     (20 tests)  - Action logging, timeline, session lifecycle
 ├── test_telemetry_collector.py   (18 tests)  - Monitor orchestration, event aggregation
-└── test_advanced_detector.py     (23 tests)  - Multi-signal analysis, verdict computation
+├── test_advanced_detector.py     (23 tests)  - Multi-signal analysis, verdict computation
+├── test_network_egress_filter.py (19 tests)  - iptables rules, chain management, host resolution
+├── test_timing_hook.py           (22 tests)  - sys.setprofile, function tracking, pattern analysis
+└── test_docker_sandbox.py        (28 tests)  - Container lifecycle, command execution, isolation
 ```
 
 Run tests:
 ```bash
 uv run pytest tests/ -v
 ```
-
-## License
-
-See `LICENSE` file.
 
 ## Acknowledgments
 
