@@ -28,6 +28,9 @@ from .process_monitor import ProcessMonitor
 from .timing_profiler import TimingProfiler
 from .tool_verifier import ToolVerifier
 from .trajectory_logger import TrajectoryLogger
+from .network_egress_filter import NetworkEgressFilter
+from .timing_hook import TimingHook
+from .docker_sandbox import DockerSandbox
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +101,19 @@ class TelemetryCollector:
         self._trajectory_logger = TrajectoryLogger(
             workspace_path=self.workspace_path,
         )
+        self._network_egress_filter = NetworkEgressFilter(
+            allowed_hosts=self.allowed_hosts,
+            on_event=self._on_event,
+        )
+        self._timing_hook = TimingHook(
+            workspace_path=self.workspace_path,
+            on_event=self._on_event,
+        )
+        self._docker_sandbox = DockerSandbox(
+            workspace_path=self.workspace_path,
+            network_enabled=False,
+            on_event=self._on_event,
+        )
 
         self._monitors = [
             self._network_monitor,
@@ -105,6 +121,11 @@ class TelemetryCollector:
             self._process_monitor,
             self._timing_profiler,
             self._tool_verifier,
+        ]
+        self._sandbox_components = [
+            self._network_egress_filter,
+            self._timing_hook,
+            self._docker_sandbox,
         ]
 
     def _on_event(self, event: TelemetryEvent) -> None:
@@ -132,6 +153,14 @@ class TelemetryCollector:
                 monitor.start()
             except Exception as e:
                 logger.warning(f"Failed to start {monitor.__class__.__name__}: {e}")
+        for component in self._sandbox_components:
+            try:
+                if hasattr(component, "setup"):
+                    component.setup()
+                elif hasattr(component, "install"):
+                    component.install()
+            except Exception as e:
+                logger.warning(f"Failed to start {component.__class__.__name__}: {e}")
         self._trajectory_logger.start_session(
             agent_name=self.agent_name,
             problem_id=self.problem_id,
@@ -147,6 +176,14 @@ class TelemetryCollector:
                 monitor.stop()
             except Exception as e:
                 logger.warning(f"Failed to stop {monitor.__class__.__name__}: {e}")
+        for component in self._sandbox_components:
+            try:
+                if hasattr(component, "teardown"):
+                    component.teardown()
+                elif hasattr(component, "uninstall"):
+                    component.uninstall()
+            except Exception as e:
+                logger.warning(f"Failed to stop {component.__class__.__name__}: {e}")
         self._trajectory_logger.end_session()
         self._build_summary()
 
